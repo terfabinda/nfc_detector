@@ -27,6 +27,8 @@ class NexusPayApp extends StatelessWidget {
   }
 }
 
+enum NFCState { checking, supported, unsupported }
+
 class NFCDashboard extends StatefulWidget {
   const NFCDashboard({super.key});
 
@@ -36,8 +38,7 @@ class NFCDashboard extends StatefulWidget {
 
 class _NFCDashboardState extends State<NFCDashboard>
     with SingleTickerProviderStateMixin {
-  bool _isChecking = true;
-  bool _isNFCSupported = false;
+  NFCState _state = NFCState.checking;
   bool _isTagDetected = false;
   late AnimationController _radarController;
 
@@ -46,7 +47,7 @@ class _NFCDashboardState extends State<NFCDashboard>
     super.initState();
     _radarController = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 3),
+      duration: const Duration(seconds: 2),
     )..repeat();
     _initNFC();
   }
@@ -59,18 +60,19 @@ class _NFCDashboardState extends State<NFCDashboard>
   }
 
   Future<void> _initNFC() async {
+    // Add a slight delay so the user sees the "Scanning for Hardware" animation
+    await Future.delayed(const Duration(seconds: 2));
+
     try {
       bool isAvailable = await NfcManager.instance.isAvailable();
-      setState(() {
-        _isNFCSupported = isAvailable;
-        _isChecking = false;
-      });
+      if (mounted) {
+        setState(() {
+          _state = isAvailable ? NFCState.supported : NFCState.unsupported;
+        });
+      }
       if (isAvailable) _startScanning();
     } catch (e) {
-      setState(() {
-        _isNFCSupported = false;
-        _isChecking = false;
-      });
+      if (mounted) setState(() => _state = NFCState.unsupported);
     }
   }
 
@@ -80,10 +82,6 @@ class _NFCDashboardState extends State<NFCDashboard>
       onDiscovered: (NfcTag tag) async {
         HapticFeedback.vibrate();
         setState(() => _isTagDetected = true);
-
-        await Future.delayed(const Duration(milliseconds: 200));
-        HapticFeedback.lightImpact();
-
         await Future.delayed(const Duration(seconds: 3));
         if (mounted) setState(() => _isTagDetected = false);
       },
@@ -95,6 +93,7 @@ class _NFCDashboardState extends State<NFCDashboard>
     return Scaffold(
       body: Stack(
         children: [
+          // Background Gradient
           Positioned.fill(
             child: Container(
               decoration: const BoxDecoration(
@@ -111,15 +110,20 @@ class _NFCDashboardState extends State<NFCDashboard>
               children: [
                 _buildAppBar(),
                 Expanded(
-                  child: _isChecking
-                      ? const Center(
-                          child: CircularProgressIndicator(
-                            color: Colors.cyanAccent,
-                          ),
-                        )
-                      : !_isNFCSupported
-                      ? _buildNoNFCView()
-                      : _buildScannerView(),
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 800),
+                    transitionBuilder:
+                        (Widget child, Animation<double> animation) {
+                          return FadeTransition(
+                            opacity: animation,
+                            child: ScaleTransition(
+                              scale: animation,
+                              child: child,
+                            ),
+                          );
+                        },
+                    child: _buildMainContent(),
+                  ),
                 ),
               ],
             ),
@@ -129,7 +133,165 @@ class _NFCDashboardState extends State<NFCDashboard>
     );
   }
 
+  Widget _buildMainContent() {
+    // Use KeyedSubtree or Keys so AnimatedSwitcher knows when to swap
+    switch (_state) {
+      case NFCState.checking:
+        return _buildStatusView(
+          key: const ValueKey('checking'),
+          icon: Icons.search_rounded,
+          title: "INITIALIZING",
+          subtitle: "Checking hardware communication links...",
+          color: Colors.cyanAccent,
+          showRadar: true,
+        );
+      case NFCState.unsupported:
+        return _buildStatusView(
+          key: const ValueKey('unsupported'),
+          icon: Icons.portable_wifi_off_rounded,
+          title: "HARDWARE FAILURE",
+          subtitle: "This device does not support NFC or it is disabled.",
+          color: Colors.redAccent,
+          showRadar: false,
+        );
+      case NFCState.supported:
+        return _buildScannerView(key: const ValueKey('active'));
+    }
+  }
+
+  Widget _buildStatusView({
+    required Key key,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required Color color,
+    required bool showRadar,
+  }) {
+    return Column(
+      key: key,
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Stack(
+          alignment: Alignment.center,
+          children: [
+            if (showRadar)
+              AnimatedBuilder(
+                animation: _radarController,
+                builder: (context, child) {
+                  return CustomPaint(
+                    painter: RadarPainter(_radarController.value, color),
+                    size: const Size(300, 300),
+                  );
+                },
+              ),
+            Container(
+              width: 140,
+              height: 140,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: color.withOpacity(0.1),
+                border: Border.all(color: color.withOpacity(0.3)),
+              ),
+              child: Icon(icon, size: 60, color: color),
+            ),
+          ],
+        ),
+        const SizedBox(height: 50),
+        Text(
+          title,
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 4,
+            color: color,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 50),
+          child: Text(
+            subtitle,
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.white.withOpacity(0.5)),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildScannerView({required Key key}) {
+    return Column(
+      key: key,
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Stack(
+          alignment: Alignment.center,
+          children: [
+            if (!_isTagDetected)
+              AnimatedBuilder(
+                animation: _radarController,
+                builder: (context, child) {
+                  return CustomPaint(
+                    painter: RadarPainter(
+                      _radarController.value,
+                      Colors.cyanAccent,
+                    ),
+                    size: const Size(300, 300),
+                  );
+                },
+              ),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 500),
+              width: 180,
+              height: 180,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: _isTagDetected
+                    ? Colors.greenAccent
+                    : Colors.cyanAccent.withOpacity(0.1),
+                boxShadow: [
+                  BoxShadow(
+                    color: _isTagDetected
+                        ? Colors.greenAccent.withOpacity(0.5)
+                        : Colors.cyanAccent.withOpacity(0.2),
+                    blurRadius: 40,
+                  ),
+                ],
+              ),
+              child: Icon(
+                _isTagDetected ? Icons.check_rounded : Icons.nfc_rounded,
+                size: 80,
+                color: _isTagDetected ? Colors.white : Colors.cyanAccent,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 60),
+        Text(
+          _isTagDetected ? "IDENTITY VERIFIED" : "SCANNING SIGNAL",
+          style: const TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 2,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 40),
+          child: Text(
+            _isTagDetected
+                ? "NFC Data packet captured successfully."
+                : "Hold your device near a compatible NFC tag.",
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.white.withOpacity(0.5)),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildAppBar() {
+    bool isActive = _state == NFCState.supported;
     return Padding(
       padding: const EdgeInsets.all(24.0),
       child: Row(
@@ -157,15 +319,16 @@ class _NFCDashboardState extends State<NFCDashboard>
               ),
             ],
           ),
-          Container(
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 500),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
-              color: _isNFCSupported
+              color: isActive
                   ? Colors.greenAccent.withOpacity(0.1)
                   : Colors.redAccent.withOpacity(0.1),
               borderRadius: BorderRadius.circular(20),
               border: Border.all(
-                color: _isNFCSupported ? Colors.greenAccent : Colors.redAccent,
+                color: isActive ? Colors.greenAccent : Colors.redAccent,
                 width: 0.5,
               ),
             ),
@@ -173,19 +336,17 @@ class _NFCDashboardState extends State<NFCDashboard>
               children: [
                 CircleAvatar(
                   radius: 4,
-                  backgroundColor: _isNFCSupported
+                  backgroundColor: isActive
                       ? Colors.greenAccent
                       : Colors.redAccent,
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  _isNFCSupported ? "NFC ACTIVE" : "NFC OFF",
+                  isActive ? "ACTIVE" : "INACTIVE",
                   style: TextStyle(
                     fontSize: 10,
                     fontWeight: FontWeight.bold,
-                    color: _isNFCSupported
-                        ? Colors.greenAccent
-                        : Colors.redAccent,
+                    color: isActive ? Colors.greenAccent : Colors.redAccent,
                   ),
                 ),
               ],
@@ -195,128 +356,22 @@ class _NFCDashboardState extends State<NFCDashboard>
       ),
     );
   }
-
-  Widget _buildScannerView() {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Stack(
-          alignment: Alignment.center,
-          children: [
-            if (!_isTagDetected)
-              AnimatedBuilder(
-                animation: _radarController,
-                builder: (context, child) {
-                  return CustomPaint(
-                    painter: RadarPainter(_radarController.value),
-                    size: const Size(300, 300),
-                  );
-                },
-              ),
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 500),
-              width: 180,
-              height: 180,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: _isTagDetected
-                    ? Colors.greenAccent
-                    : Colors.cyanAccent.withOpacity(0.1),
-                boxShadow: [
-                  BoxShadow(
-                    color: _isTagDetected
-                        ? Colors.greenAccent.withOpacity(0.5)
-                        : Colors.cyanAccent.withOpacity(0.2),
-                    blurRadius: 40,
-                    spreadRadius: 10,
-                  ),
-                ],
-              ),
-              child: Icon(
-                _isTagDetected ? Icons.check_rounded : Icons.nfc_rounded,
-                size: 80,
-                color: _isTagDetected ? Colors.white : Colors.cyanAccent,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 60),
-        Text(
-          _isTagDetected ? "IDENTITY VERIFIED" : "SCANNING FOR SIGNAL",
-          style: const TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 2,
-          ),
-        ),
-        const SizedBox(height: 10),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 40),
-          child: Text(
-            _isTagDetected
-                ? "NFC Data packet captured successfully."
-                : "Place your device near a card, tag, or another NFC phone.",
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Colors.white.withOpacity(0.5),
-              fontSize: 14,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildNoNFCView() {
-    return Center(
-      child: Container(
-        margin: const EdgeInsets.all(30),
-        padding: const EdgeInsets.all(30),
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.05),
-          borderRadius: BorderRadius.circular(30),
-          border: Border.all(color: Colors.white.withOpacity(0.1)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(
-              Icons.warning_amber_rounded,
-              size: 60,
-              color: Colors.orangeAccent,
-            ),
-            const SizedBox(height: 20),
-            const Text(
-              "HARDWARE MISMATCH",
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              "Your device does not appear to have an active NFC controller.",
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.white.withOpacity(0.6)),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 class RadarPainter extends CustomPainter {
   final double animationValue;
-  RadarPainter(this.animationValue);
+  final Color color;
+  RadarPainter(this.animationValue, this.color);
 
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
-    final paint = Paint()
-      ..color = Colors.cyanAccent.withOpacity(1.0 - animationValue)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-
     for (int i = 0; i < 3; i++) {
       double value = (animationValue + (i / 3)) % 1.0;
+      final paint = Paint()
+        ..color = color.withOpacity(1.0 - value)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2;
       canvas.drawCircle(center, size.width / 2 * value, paint);
     }
   }
