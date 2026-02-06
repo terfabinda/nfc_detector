@@ -392,7 +392,7 @@ class _NFCDashboardState extends State<NFCDashboard>
           color: Colors.cyanAccent,
         ),
         label: Text(
-          "COPYRIGHT (C) 2024 TERFA BINDA.",
+          "COPYRIGHT © 2024 TERFA BINDA",
           style: TextStyle(
             color: Colors.cyanAccent.withOpacity(0.7),
             fontSize: 10,
