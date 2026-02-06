@@ -60,9 +60,8 @@ class _NFCDashboardState extends State<NFCDashboard>
   }
 
   Future<void> _initNFC() async {
-    // Add a slight delay so the user sees the "Scanning for Hardware" animation
+    // Artificial delay to show the "Checking" animation state
     await Future.delayed(const Duration(seconds: 2));
-
     try {
       bool isAvailable = await NfcManager.instance.isAvailable();
       if (mounted) {
@@ -93,7 +92,7 @@ class _NFCDashboardState extends State<NFCDashboard>
     return Scaffold(
       body: Stack(
         children: [
-          // Background Gradient
+          // 1. Background Gradient
           Positioned.fill(
             child: Container(
               decoration: const BoxDecoration(
@@ -105,6 +104,27 @@ class _NFCDashboardState extends State<NFCDashboard>
               ),
             ),
           ),
+
+          // 2. "Splashed" Copyright Side-Text
+          Positioned(
+            right: -40,
+            top: 100,
+            bottom: 100,
+            child: RotatedBox(
+              quarterTurns: 1,
+              child: Text(
+                "NEXUS SYSTEMS CORP © 2024 • ENCRYPTED TERMINAL v4.0.2",
+                style: TextStyle(
+                  color: Colors.cyanAccent.withOpacity(0.05),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 10,
+                ),
+              ),
+            ),
+          ),
+
+          // 3. Main Content
           SafeArea(
             child: Column(
               children: [
@@ -112,19 +132,16 @@ class _NFCDashboardState extends State<NFCDashboard>
                 Expanded(
                   child: AnimatedSwitcher(
                     duration: const Duration(milliseconds: 800),
-                    transitionBuilder:
-                        (Widget child, Animation<double> animation) {
-                          return FadeTransition(
-                            opacity: animation,
-                            child: ScaleTransition(
-                              scale: animation,
-                              child: child,
-                            ),
-                          );
-                        },
+                    transitionBuilder: (child, animation) {
+                      return FadeTransition(
+                        opacity: animation,
+                        child: ScaleTransition(scale: animation, child: child),
+                      );
+                    },
                     child: _buildMainContent(),
                   ),
                 ),
+                _buildFooter(),
               ],
             ),
           ),
@@ -134,23 +151,22 @@ class _NFCDashboardState extends State<NFCDashboard>
   }
 
   Widget _buildMainContent() {
-    // Use KeyedSubtree or Keys so AnimatedSwitcher knows when to swap
     switch (_state) {
       case NFCState.checking:
         return _buildStatusView(
           key: const ValueKey('checking'),
-          icon: Icons.search_rounded,
+          icon: Icons.sync_problem_rounded,
           title: "INITIALIZING",
-          subtitle: "Checking hardware communication links...",
+          subtitle: "Booting NFC middleware and checking drivers...",
           color: Colors.cyanAccent,
           showRadar: true,
         );
       case NFCState.unsupported:
         return _buildStatusView(
           key: const ValueKey('unsupported'),
-          icon: Icons.portable_wifi_off_rounded,
-          title: "HARDWARE FAILURE",
-          subtitle: "This device does not support NFC or it is disabled.",
+          icon: Icons.error_outline_rounded,
+          title: "HARDWARE ERROR",
+          subtitle: "NFC Controller not found on this device.",
           color: Colors.redAccent,
           showRadar: false,
         );
@@ -268,7 +284,7 @@ class _NFCDashboardState extends State<NFCDashboard>
         ),
         const SizedBox(height: 60),
         Text(
-          _isTagDetected ? "IDENTITY VERIFIED" : "SCANNING SIGNAL",
+          _isTagDetected ? "ACCESS GRANTED" : "READY TO SCAN",
           style: const TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.w900,
@@ -280,8 +296,8 @@ class _NFCDashboardState extends State<NFCDashboard>
           padding: const EdgeInsets.symmetric(horizontal: 40),
           child: Text(
             _isTagDetected
-                ? "NFC Data packet captured successfully."
-                : "Hold your device near a compatible NFC tag.",
+                ? "Secure communication link established."
+                : "Position the terminal near the target device.",
             textAlign: TextAlign.center,
             style: TextStyle(color: Colors.white.withOpacity(0.5)),
           ),
@@ -342,7 +358,7 @@ class _NFCDashboardState extends State<NFCDashboard>
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  isActive ? "ACTIVE" : "INACTIVE",
+                  isActive ? "ONLINE" : "OFFLINE",
                   style: TextStyle(
                     fontSize: 10,
                     fontWeight: FontWeight.bold,
@@ -353,6 +369,37 @@ class _NFCDashboardState extends State<NFCDashboard>
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildFooter() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 20),
+      child: TextButton.icon(
+        onPressed: () {
+          showAboutDialog(
+            context: context,
+            applicationName: "Nexus Pay Terminal",
+            applicationVersion: "4.0.2",
+            applicationLegalese:
+                "© 2024 Nexus Systems Corp.\nAll rights reserved.",
+          );
+        },
+        icon: const Icon(
+          Icons.info_outline,
+          size: 16,
+          color: Colors.cyanAccent,
+        ),
+        label: Text(
+          "COPYRIGHT (C) 2024 TERFA BINDA.",
+          style: TextStyle(
+            color: Colors.cyanAccent.withOpacity(0.7),
+            fontSize: 10,
+            letterSpacing: 2,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
       ),
     );
   }
